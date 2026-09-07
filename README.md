@@ -1,6 +1,6 @@
-🌐 LLM Gateway
+# 🌐 LLM Gateway
 
-A lightweight, zero-cost production-ready AI gateway engineered to load-balance and route prompts dynamically between multiple free-tier LLM providers using **LiteLLM**, **FastAPI**, and **LangChain**.
+A lightweight, zero-cost production-ready AI gateway engineered to load-balance, cache, secure, and route prompts dynamically between multiple free-tier LLM providers using **LiteLLM**, **FastAPI**, and **LangChain**.
 
 ---
 
@@ -22,6 +22,31 @@ The gateway manages an active pool targeting top-tier open weight and flash mode
 | `fast-cheap` | `gemini-3.1-flash-lite` | Google AI Studio | High RPM, low-latency lookups |
 | `smart-coding` | `gemini-3.8-flash` | Google AI Studio | Code parsing, multi-step logic |
 | `balanced` | `llama-3.3-70b-versatile` | Groq Platform | Factual reasoning, complex conversations |
+
+---
+
+## ⚡ Architectural Deep Dives
+
+### 1. In-Memory Caching Engine
+To prevent hitting strict free-tier rate limits and eliminate unnecessary pricing transactions, the gateway integrates a localized `RAM Cache` architecture. 
+* **Cache Hit Strategy:** When an incoming query is parsed, its cryptographic signature (Model + Prompt Payload) is checked against local memory cache storage before hitting external servers.
+* **Cost Efficiency:** A cache hit skips network transit entirely, costing **\$0.00** in tokens and protecting your provider rate quotas from getting exhausted.
+
+### 2. Sub-Millisecond Latency Matrix
+By serving repeated requests straight out of local RAM rather than triggering an external web request to Google or Groq over the internet, response delivery speeds drop down to an instant **`0.0000s`** runtime footprint.
+
+```text
+ [Client Request] ──> [LLM Gateway] ──> (Cache Hit?) ── YES ──> [Instant local RAM Response] (<0.001s)
+                           │
+                          NO
+                           └──> (Live Cloud API Call) ────────> [External Server Transit]  (1.5s - 3.0s)
+```
+
+### 3. Proactive Security Guardrails
+The gateway implements a rigorous intercept strategy via LiteLLM's `input_callback` hooks to enforce compliance parameters:
+* **Pre-Execution Scanning:** User queries are thoroughly analyzed and scrubbed *before* a network payload is generated or sent to cloud networks.
+* **Malicious Intent Interception:** Unsafe terminology or harmful strings (e.g., `"hack"`, `"exploit"`) trigger an immediate `GuardrailViolation` exception at the root level.
+* **Instant Rejection:** The application blocks execution instantly, keeping your provider history completely clean and protecting backend data loops.
 
 ---
 
@@ -64,26 +89,23 @@ Routes a single execution prompt to your model pool alias.
 **Request Payload Structure:**
 ```json
 {
-  "prompt": "Write an optimized Python function to check for palindromes.",
-  "alias": "smart-coding"
+  "prompt": "Explain RAG in one sentence.",
+  "alias": "fast-cheap"
 }
 ```
 
-**Response Telemetry Structure:**
+**Response Telemetry Structure (Live Call vs. Cached Call):**
 ```json
 {
   "success": true,
-  "model_deployed": "gemini/gemini-3.8-flash",
-  "content": "def is_palindrome(s): ...",
+  "model_deployed": "gemini/gemini-3.1-flash-lite",
+  "content": "Retrieval-Augmented Generation blends external search documents with an LLM...",
   "metrics": {
-    "input_tokens": 42,
-    "output_tokens": 128,
-    "transaction_cost_usd": 0.00000000
+    "input_tokens": 12,
+    "output_tokens": 24,
+    "latency_sec": 0.0, 
+    "transaction_cost_usd": 0.00000000,
+    "cache_status": "HIT"
   }
 }
 ```
-
----
-
-## 🔒 Security & Safety
-This system uses a zero-trust model configuration. Prompts requesting access to unauthorized domains, penetration tutorials, or server disruptions trigger an automated `GuardrailViolation` and are instantly terminated at the proxy level
